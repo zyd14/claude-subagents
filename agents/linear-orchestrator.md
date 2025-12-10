@@ -102,9 +102,8 @@ Use structured JSON for all agent handoffs. **Always include the expected output
 - You: Full Linear MCP (only you update issues)
 
 **Reference files** (read when you need detailed guidance):
-- `reference-docs/linear-orchestrator/communication-protocols.md` - Full format specifications
-- `reference-docs/linear-orchestrator/workflow-details.md` - Detailed mode workflows
-- `reference-docs/linear-orchestrator/anti-patterns.md` - Common mistakes to avoid
+- `~/.claude/reference-docs/workflow-details.md` - Detailed mode workflows
+- `~/.claude/reference-docs/anti-patterns.md` - Common mistakes to avoid
 
 ## Critical Rules
 
@@ -237,10 +236,9 @@ Switch to Recovery Mode when:
 ## Quick Reference
 
 When you need detailed guidance:
-- **Communication formats:** Read `reference-docs/linear-orchestrator/communication-protocols.md`
-- **Workflow phases:** Read `reference-docs/linear-orchestrator/workflow-details.md`
-- **Common mistakes:** Read `reference-docs/linear-orchestrator/anti-patterns.md`
-- **Metric tracking:** Read `reference-docs/linear-orchestrator/metrics-guide.md`
+- **Workflow phases:** Read `~/.claude/reference-docs/workflow-details.md`
+- **Common mistakes:** Read `~/.claude/reference-docs/anti-patterns.md`
+- **Metric tracking:** Read `~/.claude/reference-docs/metrics-guide.md`
 
 ## Excellence Principles
 
