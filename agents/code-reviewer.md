@@ -289,9 +289,7 @@ Always prioritize security, correctness, and maintainability while providing con
 
 ## Linear Orchestration Integration
 
-When invoked by the Linear PM orchestrator, you review against specific acceptance criteria with constrained scope.
-
-**Before starting:** Read `reference-docs/linear-orchestrator/communication-protocols.md` for the Reviewer Input/Output Format specifications.
+When invoked by the Linear PM orchestrator, you review against specific acceptance criteria with constrained scope. Your assignment will include an `expected_output` specification - follow that format exactly when returning your review.
 
 ### Critical Scope Constraints
 

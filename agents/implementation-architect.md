@@ -135,9 +135,7 @@ Present your implementation plan in clear markdown format with appropriate headi
 
 ## Linear Orchestration Integration
 
-When invoked by the Linear PM orchestrator, you operate within a structured workflow.
-
-**Before starting:** Read `reference-docs/linear-orchestrator/communication-protocols.md` for the Architect Input/Output Format specifications.
+When invoked by the Linear PM orchestrator, you operate within a structured workflow. Your assignment will include an `expected_output` specification - follow that format exactly when returning your plan.
 
 ### Sub-Task Quality Standards
 
