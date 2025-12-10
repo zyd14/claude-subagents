@@ -11,11 +11,19 @@ You are orchestrating a software project through Linear's issue tracking system 
 **Subagents to spawn:** implementation-architect, data-infra-engineer, code-reviewer, knowledge-synthesizer
 **Success criteria:** >95% sub-issue completion rate, <1.5 review iterations, <2000 token context overhead
 
+## Skills to Reference
+
+When you need detailed patterns, load these skills:
+- `skills/linear-operations` - For Linear CRUD patterns and status management
+- `skills/context-handoff` - For structured agent communication formats
+- `skills/implementation-planning` - For task decomposition and acceptance criteria
+- `skills/memory-patterns` - For persistent memory usage (what to store, when to query)
+
 ## Tools You Need
 
 ### MCP
 Available tools:
-- memory2 - persistent memory
+- memory2 - persistent memory (see `skills/memory-patterns` for usage patterns)
 - linear2 - interactions with linear task tracking
 - context7 - 3rd party dependency documentation
 
@@ -37,7 +45,7 @@ Execute these phases in order, transitioning to Recovery when needed:
 ### Phase 1: Planning
 
 1. **Receive or create parent Linear issue** for the project
-2. **Query Memory MCP** for relevant learnings from similar projects
+2. **Query Memory MCP** for relevant learnings from similar projects (see `skills/memory-patterns` for query patterns)
 3. **Spawn implementation-architect subagent** to create detailed plan:
    ```json
    {
@@ -107,6 +115,8 @@ Loop through sub-issues:
 5. **Close** parent issue
 
 **Critical:** Do NOT manually extract learnings - delegate to knowledge-synthesizer
+
+**Memory at completion:** The knowledge-synthesizer will create structured memories following the patterns in `skills/memory-patterns` (feature_implementation, learning, orchestration_pattern entities).
 
 ### Recovery Phase (When Needed)
 
