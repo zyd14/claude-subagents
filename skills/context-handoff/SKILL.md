@@ -1,6 +1,7 @@
 ---
 name: context-handoff
 description: Structured patterns for passing context between agents, phases, and workflows. Ensures clear communication with minimal overhead through standardized JSON formats and focused context principles.
+allowed-tools: Read, Write, Edit, Glob, Grep
 ---
 
 # Context Handoff Skill
@@ -57,9 +58,7 @@ Use this format when assigning work to an implementation agent:
   "relevant_context": {
     "files": ["path/to/relevant/file.py"],
     "dependencies": ["LIN-122 must be complete"],
-    "learnings": [
-      "Relevant insight from past work"
-    ]
+    "learnings": ["Relevant insight from past work"]
   },
   "expected_output": {
     "format": "implementation_result",
@@ -124,6 +123,33 @@ Use this format when requesting code review:
     "required_fields": ["decision", "summary", "feedback"],
     "decision_values": ["approved", "approved_with_suggestions", "changes_required", "rejected"]
   }
+}
+```
+
+### Knowledge Synthesis Assignment
+
+Use this format when invoking post-project learning extraction:
+
+```json
+{
+  "assignment_type": "knowledge_synthesis",
+  "parent_issue_id": "LIN-100",
+  "project_summary": "Brief project description",
+  "completion_status": "delivered",
+  "data": {
+    "sub_issues": ["LIN-101", "LIN-102", "LIN-103"],
+    "divergences": ["All documented divergences"],
+    "review_feedback": ["All review outcomes"],
+    "blockers_encountered": ["All blockers and resolutions"]
+  },
+  "metrics": {
+    "sub_issues_total": 12,
+    "sub_issues_first_pass": 7,
+    "avg_review_iterations": 1.4,
+    "divergences_tracked": 6,
+    "blockers_encountered": 2
+  },
+  "notes": "Notable observations for learning extraction"
 }
 ```
 
@@ -232,6 +258,37 @@ Reviewers return this after evaluating work:
 }
 ```
 
+### Knowledge Synthesis Result
+
+Knowledge synthesizer returns this after extracting learnings:
+
+```json
+{
+  "result_type": "knowledge_synthesis",
+  "parent_issue_id": "LIN-100",
+  "learnings": [
+    {
+      "learning_id": "learning-auth-001",
+      "category": "best-practice|gotcha|process-improvement|anti-pattern",
+      "scope": "global|project-specific",
+      "title": "Short descriptive title",
+      "description": "Detailed explanation of the learning",
+      "source_issues": ["LIN-102", "LIN-105"],
+      "applies_to": ["relevant-tags"],
+      "confidence": "high|medium|low"
+    }
+  ],
+  "patterns": {
+    "divergence_themes": ["Common divergence patterns"],
+    "review_feedback_themes": ["Common review issues"],
+    "success_factors": ["What worked well"]
+  },
+  "recommendations": [
+    "Suggestions for future projects"
+  ]
+}
+```
+
 ## Phase Transition Patterns
 
 ### Planning → Execution
@@ -299,6 +356,65 @@ When agents encounter issues they can't resolve:
 }
 ```
 
+## Validation
+
+### Before Sending to Agent
+
+- ✅ Required fields present
+- ✅ Issue ID valid (if using Linear)
+- ✅ Acceptance criteria are testable
+- ✅ Context is focused and relevant
+- ✅ Total token count <2000
+
+### After Receiving from Agent
+
+- ✅ Required fields present
+- ✅ Status value is valid
+- ✅ Divergences include rationale
+- ✅ Artifacts list is complete
+- ✅ Output matches expected format
+
+### When Validation Fails
+
+1. Log the malformed response
+2. Request clarification with specific issue
+3. Provide format example
+4. Track as communication round
+
+## Error Handling
+
+### When agent returns "blocked" or "needs_clarification"
+
+1. Switch to Recovery Mode (if in orchestration)
+2. Diagnose the blocker
+3. Provide additional context or escalate to user
+4. Track resolution for learning
+
+### When format is incorrect
+
+1. Don't proceed with invalid data
+2. Ask agent to reformat with specific guidance
+3. If repeated failures, reassess task assignment
+
+## Communication Efficiency
+
+### Target Metrics
+
+| Metric | Target | Red Flag |
+|--------|--------|----------|
+| Context size | <2000 tokens | >2500 tokens |
+| Communication rounds | 1-2 per issue | >3 rounds |
+| Clarification rate | <10% | >20% |
+| Format violations | 0% | Any |
+
+### Red Flags to Watch
+
+- >3 communication rounds for single issue
+- Agents requesting information already provided
+- Frequent format violations
+- Context size consistently >2500 tokens
+- Repeated need for clarification
+
 ## Best Practices
 
 ### Do
@@ -309,6 +425,7 @@ When agents encounter issues they can't resolve:
 - ✅ Provide 2-3 relevant learnings maximum
 - ✅ Use consistent field names across handoffs
 - ✅ Include issue IDs for traceability
+- ✅ Validate before sending and after receiving
 
 ### Don't
 
@@ -318,3 +435,4 @@ When agents encounter issues they can't resolve:
 - ❌ Assign multiple unrelated tasks in one handoff
 - ❌ Use inconsistent status values
 - ❌ Omit acceptance criteria from assignments
+- ❌ Proceed with invalid agent responses

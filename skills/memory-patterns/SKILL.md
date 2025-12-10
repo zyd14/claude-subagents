@@ -1,7 +1,7 @@
 ---
 name: memory-patterns
 description: Patterns for using persistent memory (memory2 MCP) effectively. Covers what to store, when to query, entity schemas, and knowledge areas. Prevents transient data pollution while building valuable long-term knowledge.
-allowed-tools: 
+allowed-tools: Read, Write, Edit, Glob, Grep, mcp__memory2__create_entities, mcp__memory2__create_relations, mcp__memory2__add_observations, mcp__memory2__delete_entities, mcp__memory2__delete_observations, mcp__memory2__delete_relations, mcp__memory2__read_graph, mcp__memory2__search_nodes, mcp__memory2__open_nodes
 ---
 
 # Memory Patterns Skill

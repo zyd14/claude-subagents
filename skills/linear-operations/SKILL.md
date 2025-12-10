@@ -1,6 +1,7 @@
 ---
 name: linear-operations
 description: Patterns and best practices for interacting with Linear issue tracking. Provides structured approaches for creating issues, managing status, updating with summaries, and maintaining Linear as a source of truth.
+allowed-tools: Read, Write, Edit, Glob, Grep, WebSearch, mcp__memory2__read_graph, mcp__memory2__search_nodes, mcp__memory2__open_nodes, mcp__linear2__list_comments, mcp__linear2__create_comment, mcp__linear2__get_document, mcp__linear2__list_documents, mcp__linear2__get_issue, mcp__linear2__list_issues, mcp__linear2__create_issue, mcp__linear2__update_issue, mcp__linear2__list_issue_statuses, mcp__linear2__get_issue_status, mcp__linear2__list_issue_labels, mcp__linear2__create_issue_label, mcp__linear2__get_project, mcp__linear2__update_project, mcp__linear2__list_project_labels, mcp__linear2__search_documentation, mcp__ide__getDiagnostics
 ---
 
 # Linear Operations Skill
