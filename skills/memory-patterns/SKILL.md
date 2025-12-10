@@ -1,6 +1,7 @@
 ---
 name: memory-patterns
 description: Patterns for using persistent memory (memory2 MCP) effectively. Covers what to store, when to query, entity schemas, and knowledge areas. Prevents transient data pollution while building valuable long-term knowledge.
+allowed-tools: 
 ---
 
 # Memory Patterns Skill
