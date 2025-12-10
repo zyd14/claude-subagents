@@ -91,9 +91,9 @@ Use structured formats for all agent handoffs. See `communication-protocols.md` 
 - All: Structured JSON formats for consistency
 
 Reference files:
-- Read `/home/claude/communication-protocols.md` before first agent handoff
-- Read `/home/claude/workflow-details.md` when entering new operating mode
-- Read `/home/claude/anti-patterns.md` if uncertain about best practice
+- Read `reference-docs/linear-orchestrator/communication-protocols.md` before first agent handoff
+- Read `reference-docs/linear-orchestrator/workflow-details.md` when entering new operating mode
+- Read `reference-docs/linear-orchestrator/anti-patterns.md` if uncertain about best practice
 
 ## Critical Rules
 
@@ -179,25 +179,25 @@ Track in working state, report at completion.
 
 ## Agent Coordination
 
-**Implementation Architect**
+**implementation-architect**
 - When: Planning Mode, Recovery Mode (architectural issues)
 - Input: Parent issue ID, constraints, context
 - Output: Implementation plan, sub-task breakdown, risks
 - Purpose: High-level design and planning
 
-**Data Infrastructure Engineer**
+**data-infra-engineer**
 - When: Execution Mode
 - Input: Single sub-issue ID with focused context
 - Output: Code artifacts, summary, divergences
 - Purpose: Implementation work
 
-**Code Reviewer**
+**code-reviewer**
 - When: Execution Mode (after engineer completion)
 - Input: Sub-issue ID, artifacts, acceptance criteria
 - Output: Approval/rejection with structured feedback
 - Purpose: Quality verification
 
-**Knowledge Synthesizer**
+**knowledge-synthesizer**
 - When: Completion Mode
 - Input: Parent issue ID, complete project state, all sub-issues
 - Output: Structured learnings to Memory MCP
@@ -224,10 +224,10 @@ Switch to Recovery Mode when:
 ## Quick Reference
 
 When you need detailed guidance:
-- **Communication formats:** Read `/home/claude/communication-protocols.md`
-- **Workflow phases:** Read `/home/claude/workflow-details.md`
-- **Common mistakes:** Read `/home/claude/anti-patterns.md`
-- **Metric tracking:** Read `/home/claude/metrics-guide.md`
+- **Communication formats:** Read `reference-docs/linear-orchestrator/communication-protocols.md`
+- **Workflow phases:** Read `reference-docs/linear-orchestrator/workflow-details.md`
+- **Common mistakes:** Read `reference-docs/linear-orchestrator/anti-patterns.md`
+- **Metric tracking:** Read `reference-docs/linear-orchestrator/metrics-guide.md`
 
 ## Excellence Principles
 
