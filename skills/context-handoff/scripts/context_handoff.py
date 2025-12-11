@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
@@ -39,7 +39,6 @@ from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
-import jsonschema
 from jsonschema import validate, ValidationError
 
 
