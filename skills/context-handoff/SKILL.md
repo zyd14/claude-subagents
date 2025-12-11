@@ -1,6 +1,6 @@
 ---
 name: context-handoff
-description: Structured patterns for passing context between agents, phases, and workflows. Ensures clear communication with minimal overhead through standardized JSON formats and focused context principles. Use when needing to manage communication between multiple agents.
+description: Structured patterns for passing context between agents, phases, and workflows. Ensures clear communication with minimal overhead through file-based JSON storage and reference passing. Use when needing to manage communication between multiple agents.
 allowed-tools: Read, Write, Edit, Glob, Grep
 ---
 
@@ -18,25 +18,160 @@ This skill provides patterns for efficient context transfer between agents, work
 ## Core Principles
 
 1. **Minimal sufficient context** - Include only what's needed for the task
-2. **Structured formats** - Use consistent JSON schemas
-3. **Clear expectations** - Always specify expected outputs
-4. **Single focus** - One task per handoff
-5. **Explicit boundaries** - State what's in scope and out of scope
+2. **File-based communication** - Write assignments and results to files, pass paths
+3. **Structured formats** - Use consistent JSON schemas
+4. **Clear expectations** - Always specify expected outputs
+5. **Single focus** - One task per handoff
+6. **Explicit boundaries** - State what's in scope and out of scope
+7. **Lazy loading** - Keep only summaries in context, load full details on demand
+
+## Communication Architecture
+
+### File-Based Pattern
+
+**All agent communication uses file-based handoffs:**
+
+1. **Coordinator creates assignment** → Writes to `.agents/session-{id}/assignments/{file}.json`
+2. **Coordinator passes file path** → Agent receives path, not full JSON
+3. **Agent reads assignment** → Loads file content when needed
+4. **Agent writes result** → Writes to `.agents/session-{id}/results/{file}.json`
+5. **Agent returns file path** → Coordinator receives path + summary
+6. **Coordinator loads on demand** → Only reads full result when needed
+
+### Directory Structure
+
+```
+.agents/
+  session-{timestamp}-{workflow-name}/
+    assignments/
+      01-architect-planning-{issue-id}.json
+      02-engineer-implementation-{issue-id}.json
+      03-reviewer-review-{issue-id}.json
+    results/
+      01-architect-planning-{issue-id}.json
+      02-engineer-implementation-{issue-id}.json
+      03-reviewer-review-{issue-id}.json
+    metadata.json  # Session info, workflow state, timeline
+```
+
+### Session Naming Convention
+
+Format: `session-{YYYYMMDD-HHMMSS}-{workflow-name}`
+
+Examples:
+- `session-20241210-143022-implement-auth`
+- `session-20241210-150145-linear-lin-123`
+
+### File Naming Convention
+
+**Assignments:** `{sequence}-{agent-role}-{assignment-type}-{issue-id}.json`
+**Results:** `{sequence}-{agent-role}-{assignment-type}-{issue-id}.json`
+
+Examples:
+- `01-architect-planning-LIN-123.json`
+- `02-engineer-implementation-LIN-123.json`
+- `03-reviewer-review-LIN-123.json`
+
+Sequence numbers ensure chronological ordering and easy navigation.
 
 ## Context Budget Guidelines
 
-| Handoff Type | Target Budget | Includes |
+With file-based communication, coordinators maintain minimal context:
+
+| Context Type | Target Budget | Contents |
 |--------------|---------------|----------|
-| Task assignment | <2000 tokens | Task, criteria, constraints, 2-3 learnings |
-| Result return | <1500 tokens | Status, summary, divergences, artifacts |
-| Phase transition | <1000 tokens | Phase summary, next phase inputs |
-| Error escalation | <1000 tokens | Error, context, attempted solutions |
+| Coordinator working set | <5K tokens | Workflow state, current phase, file references |
+| File reference | <100 tokens | Path, summary, status, timestamp |
+| Full file load | On-demand | Only when explicitly needed for decision |
+
+**Traditional context growth:**
+- 10 agent interactions = 30-40K tokens in coordinator context
+
+**File-based context:**
+- 10 agent interactions = 1-2K tokens (just references + summaries)
+
+## File-Based Communication Workflow
+
+### Step 1: Coordinator Creates Assignment
+
+```python
+# Coordinator writes assignment to file
+assignment = {
+    "assignment_type": "implementation",
+    "issue_id": "LIN-123",
+    # ... full assignment details
+}
+
+assignment_path = ".agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json"
+write_json_file(assignment_path, assignment)
+
+# Coordinator passes reference to agent
+agent_input = {
+    "assignment_path": assignment_path,
+    "summary": "Implement user authentication middleware",
+    "expected_result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
+}
+```
+
+### Step 2: Agent Reads Assignment
+
+```python
+# Agent receives reference, loads full content
+agent_input = receive_input()  # Gets path + summary
+assignment = read_json_file(agent_input["assignment_path"])
+
+# Agent works on task...
+```
+
+### Step 3: Agent Writes Result
+
+```python
+# Agent writes full result to file
+result = {
+    "result_type": "implementation",
+    "status": "complete",
+    # ... full result details
+}
+
+result_path = agent_input["expected_result_path"]
+write_json_file(result_path, result)
+
+# Agent returns reference only
+return {
+    "result_path": result_path,
+    "summary": "Successfully implemented auth middleware in 3 files",
+    "status": "complete",
+    "requires_attention": False
+}
+```
+
+### Step 4: Coordinator Receives Reference
+
+```python
+# Coordinator receives reference (not full result)
+agent_output = receive_from_agent()
+
+# Store reference in working state
+workflow_state["tasks"]["task_02"] = {
+    "result_path": agent_output["result_path"],
+    "summary": agent_output["summary"],
+    "status": agent_output["status"],
+    "loaded": False  # Full content not in context
+}
+
+# Only load full result when needed
+if need_detailed_review:
+    full_result = read_json_file(agent_output["result_path"])
+    workflow_state["tasks"]["task_02"]["loaded"] = True
+```
 
 ## Assignment Formats
 
+All assignments are written to files and referenced by path. Agents receive the file path, not the full content.
+
 ### Standard Task Assignment
 
-Use this format when assigning work to an implementation agent:
+**File location:** `.agents/session-{id}/assignments/{seq}-{role}-implementation-{issue}.json`
 
 ```json
 {
@@ -58,9 +193,13 @@ Use this format when assigning work to an implementation agent:
   "relevant_context": {
     "files": ["path/to/relevant/file.py"],
     "dependencies": ["LIN-122 must be complete"],
-    "learnings": ["Relevant insight from past work"]
+    "learnings": ["Relevant insight from past work"],
+    "reference_files": [
+      ".agents/session-xyz/results/01-architect-planning-LIN-120.json"
+    ]
   },
   "expected_output": {
+    "result_path": ".agents/session-{id}/results/{seq}-{role}-implementation-{issue}.json",
     "format": "implementation_result",
     "required_fields": ["status", "summary", "artifacts"],
     "status_values": ["complete", "blocked", "needs_clarification"]
@@ -72,9 +211,19 @@ Use this format when assigning work to an implementation agent:
 }
 ```
 
+**What coordinator passes to agent:**
+
+```json
+{
+  "assignment_path": ".agents/session-{id}/assignments/02-engineer-implementation-LIN-123.json",
+  "summary": "Implement user authentication middleware",
+  "expected_result_path": ".agents/session-{id}/results/02-engineer-implementation-LIN-123.json"
+}
+```
+
 ### Planning Assignment
 
-Use this format when requesting architectural planning:
+**File location:** `.agents/session-{id}/assignments/{seq}-architect-planning-{issue}.json`
 
 ```json
 {
@@ -87,9 +236,13 @@ Use this format when requesting architectural planning:
   "context": {
     "background": "Why this work is needed",
     "constraints": ["Technical constraints", "Timeline constraints"],
-    "existing_patterns": ["Patterns to follow or reference"]
+    "existing_patterns": ["Patterns to follow or reference"],
+    "reference_files": [
+      ".agents/session-xyz/results/previous-feature-planning.json"
+    ]
   },
   "expected_output": {
+    "result_path": ".agents/session-{id}/results/{seq}-architect-planning-{issue}.json",
     "format": "implementation_plan",
     "required_fields": ["approach", "sub_tasks", "dependencies", "risks"],
     "sub_task_fields": ["task", "description", "acceptance_criteria", "estimate"]
@@ -97,9 +250,19 @@ Use this format when requesting architectural planning:
 }
 ```
 
+**What coordinator passes to agent:**
+
+```json
+{
+  "assignment_path": ".agents/session-{id}/assignments/01-architect-planning-LIN-100.json",
+  "summary": "Plan implementation approach for feature X",
+  "expected_result_path": ".agents/session-{id}/results/01-architect-planning-LIN-100.json"
+}
+```
+
 ### Review Assignment
 
-Use this format when requesting code review:
+**File location:** `.agents/session-{id}/assignments/{seq}-reviewer-review-{issue}.json`
 
 ```json
 {
@@ -108,7 +271,8 @@ Use this format when requesting code review:
   "review_scope": {
     "summary": "What was implemented",
     "artifacts": ["path/to/changed/file.py"],
-    "pr_link": "https://github.com/..."
+    "pr_link": "https://github.com/...",
+    "implementation_result_path": ".agents/session-{id}/results/02-engineer-implementation-LIN-123.json"
   },
   "acceptance_criteria": [
     "Original criterion 1",
@@ -119,6 +283,7 @@ Use this format when requesting code review:
     "Pattern compliance to check"
   ],
   "expected_output": {
+    "result_path": ".agents/session-{id}/results/{seq}-reviewer-review-{issue}.json",
     "format": "review_result",
     "required_fields": ["decision", "summary", "feedback"],
     "decision_values": ["approved", "approved_with_suggestions", "changes_required", "rejected"]
@@ -126,9 +291,19 @@ Use this format when requesting code review:
 }
 ```
 
+**What coordinator passes to agent:**
+
+```json
+{
+  "assignment_path": ".agents/session-{id}/assignments/03-reviewer-review-LIN-123.json",
+  "summary": "Review implementation of auth middleware",
+  "expected_result_path": ".agents/session-{id}/results/03-reviewer-review-LIN-123.json"
+}
+```
+
 ### Knowledge Synthesis Assignment
 
-Use this format when invoking post-project learning extraction:
+**File location:** `.agents/session-{id}/assignments/{seq}-synthesizer-synthesis-{issue}.json`
 
 ```json
 {
@@ -138,9 +313,16 @@ Use this format when invoking post-project learning extraction:
   "completion_status": "delivered",
   "data": {
     "sub_issues": ["LIN-101", "LIN-102", "LIN-103"],
-    "divergences": ["All documented divergences"],
-    "review_feedback": ["All review outcomes"],
-    "blockers_encountered": ["All blockers and resolutions"]
+    "result_files": [
+      ".agents/session-{id}/results/02-engineer-implementation-LIN-101.json",
+      ".agents/session-{id}/results/04-engineer-implementation-LIN-102.json",
+      ".agents/session-{id}/results/06-engineer-implementation-LIN-103.json"
+    ],
+    "review_files": [
+      ".agents/session-{id}/results/03-reviewer-review-LIN-101.json",
+      ".agents/session-{id}/results/05-reviewer-review-LIN-102.json",
+      ".agents/session-{id}/results/07-reviewer-review-LIN-103.json"
+    ]
   },
   "metrics": {
     "sub_issues_total": 12,
@@ -149,15 +331,33 @@ Use this format when invoking post-project learning extraction:
     "divergences_tracked": 6,
     "blockers_encountered": 2
   },
-  "notes": "Notable observations for learning extraction"
+  "notes": "Notable observations for learning extraction",
+  "expected_output": {
+    "result_path": ".agents/session-{id}/results/{seq}-synthesizer-synthesis-{issue}.json",
+    "format": "knowledge_synthesis_result"
+  }
+}
+```
+
+**What coordinator passes to agent:**
+
+```json
+{
+  "assignment_path": ".agents/session-{id}/assignments/10-synthesizer-synthesis-LIN-100.json",
+  "summary": "Extract learnings from completed project LIN-100",
+  "expected_result_path": ".agents/session-{id}/results/10-synthesizer-synthesis-LIN-100.json"
 }
 ```
 
 ## Result Formats
 
+All results are written to files. Agents return a lightweight reference, not the full content.
+
 ### Implementation Result
 
-Agents return this after completing implementation work:
+**File location:** `.agents/session-{id}/results/{seq}-{role}-implementation-{issue}.json`
+
+Agents write this after completing implementation work:
 
 ```json
 {
@@ -188,9 +388,24 @@ Agents return this after completing implementation work:
 }
 ```
 
+**What agent returns to coordinator:**
+
+```json
+{
+  "result_path": ".agents/session-{id}/results/02-engineer-implementation-LIN-123.json",
+  "result_type": "implementation",
+  "status": "complete",
+  "summary": "Successfully implemented auth middleware in 3 files",
+  "requires_attention": false,
+  "timestamp": "2024-12-10T14:35:22Z"
+}
+```
+
 ### Planning Result
 
-Architects return this after creating implementation plans:
+**File location:** `.agents/session-{id}/results/{seq}-architect-planning-{issue}.json`
+
+Architects write this after creating implementation plans:
 
 ```json
 {
@@ -225,9 +440,25 @@ Architects return this after creating implementation plans:
 }
 ```
 
+**What agent returns to coordinator:**
+
+```json
+{
+  "result_path": ".agents/session-{id}/results/01-architect-planning-LIN-100.json",
+  "result_type": "planning",
+  "status": "complete",
+  "summary": "Planned microservices approach with 3 main components and 8 sub-tasks",
+  "requires_attention": true,
+  "attention_reason": "2 open questions need user input",
+  "timestamp": "2024-12-10T14:25:15Z"
+}
+```
+
 ### Review Result
 
-Reviewers return this after evaluating work:
+**File location:** `.agents/session-{id}/results/{seq}-reviewer-review-{issue}.json`
+
+Reviewers write this after evaluating work:
 
 ```json
 {
@@ -258,9 +489,24 @@ Reviewers return this after evaluating work:
 }
 ```
 
+**What agent returns to coordinator:**
+
+```json
+{
+  "result_path": ".agents/session-{id}/results/03-reviewer-review-LIN-123.json",
+  "result_type": "review",
+  "decision": "approved_with_suggestions",
+  "summary": "Code meets all criteria with 3 minor suggestions for improvement",
+  "requires_attention": false,
+  "timestamp": "2024-12-10T14:45:30Z"
+}
+```
+
 ### Knowledge Synthesis Result
 
-Knowledge synthesizer returns this after extracting learnings:
+**File location:** `.agents/session-{id}/results/{seq}-synthesizer-synthesis-{issue}.json`
+
+Knowledge synthesizer writes this after extracting learnings:
 
 ```json
 {
@@ -289,23 +535,41 @@ Knowledge synthesizer returns this after extracting learnings:
 }
 ```
 
+**What agent returns to coordinator:**
+
+```json
+{
+  "result_path": ".agents/session-{id}/results/10-synthesizer-synthesis-LIN-100.json",
+  "result_type": "knowledge_synthesis",
+  "status": "complete",
+  "summary": "Extracted 5 learnings from project, identified 3 recurring patterns",
+  "requires_attention": false,
+  "timestamp": "2024-12-10T15:00:45Z"
+}
+```
+
 ## Phase Transition Patterns
 
+Phase transitions use file references to maintain minimal context.
+
 ### Planning → Execution
+
+**File location:** `.agents/session-{id}/metadata.json` (updated with transition info)
 
 ```json
 {
   "transition": "planning_to_execution",
   "parent_issue": "LIN-100",
+  "planning_result_path": ".agents/session-{id}/results/01-architect-planning-LIN-100.json",
   "planning_summary": {
     "approach": "Chosen implementation approach",
-    "sub_issues_created": ["LIN-101", "LIN-102", "LIN-103"],
-    "dependency_order": ["LIN-101", "LIN-102", "LIN-103"],
+    "sub_tasks_count": 8,
+    "dependency_order": ["task-1", "task-2", "task-3"],
     "key_decisions": ["Decision 1", "Decision 2"]
   },
   "execution_inputs": {
-    "first_task": "LIN-101",
-    "loaded_learnings": ["Learning to apply during execution"],
+    "first_task": "task-1",
+    "loaded_learnings_count": 3,
     "risk_mitigations": ["Mitigation to keep in mind"]
   }
 }
@@ -318,27 +582,35 @@ Knowledge synthesizer returns this after extracting learnings:
   "transition": "execution_to_completion",
   "parent_issue": "LIN-100",
   "execution_summary": {
-    "sub_issues_completed": ["LIN-101", "LIN-102", "LIN-103"],
+    "sub_tasks_completed": 8,
+    "result_files": [
+      ".agents/session-{id}/results/02-engineer-implementation-task-1.json",
+      ".agents/session-{id}/results/04-engineer-implementation-task-2.json"
+      // ... more files
+    ],
     "total_divergences": 2,
-    "review_iterations": 1.3,
+    "avg_review_iterations": 1.3,
     "blockers_resolved": 1
   },
   "completion_inputs": {
     "artifacts_to_link": ["PR links", "Doc links"],
-    "divergences_to_document": ["List of divergences"],
-    "learnings_to_extract": ["Patterns observed"]
+    "divergences_summary": "2 minor scope adjustments",
+    "learnings_ready": true
   }
 }
 ```
 
 ## Error Escalation Format
 
-When agents encounter issues they can't resolve:
+When agents encounter issues they can't resolve, they write an escalation file.
+
+**File location:** `.agents/session-{id}/escalations/{seq}-{agent-role}-escalation-{issue}.json`
 
 ```json
 {
   "escalation_type": "blocker|clarification|scope_change",
   "issue_id": "LIN-123",
+  "assignment_path": ".agents/session-{id}/assignments/02-engineer-implementation-LIN-123.json",
   "context": {
     "task": "What was being attempted",
     "progress": "How far work got before the issue"
@@ -356,23 +628,94 @@ When agents encounter issues they can't resolve:
 }
 ```
 
+**What agent returns to coordinator:**
+
+```json
+{
+  "status": "blocked",
+  "escalation_path": ".agents/session-{id}/escalations/02-engineer-escalation-LIN-123.json",
+  "escalation_type": "blocker",
+  "summary": "Cannot proceed: missing database credentials",
+  "requires_attention": true,
+  "timestamp": "2024-12-10T14:40:00Z"
+}
+```
+
+## Session Metadata
+
+Every session maintains a metadata file for tracking workflow state.
+
+**File location:** `.agents/session-{id}/metadata.json`
+
+```json
+{
+  "session_id": "session-20241210-143022-implement-auth",
+  "workflow_type": "implement|linear-orchestrator",
+  "created_at": "2024-12-10T14:30:22Z",
+  "updated_at": "2024-12-10T15:00:45Z",
+  "status": "active|completed|failed|abandoned",
+  "parent_issue": "LIN-100",
+  "feature_name": "User authentication system",
+  "phases": {
+    "current_phase": "execution",
+    "completed_phases": ["requirements", "design", "planning"],
+    "phase_transitions": [
+      {
+        "from": "planning",
+        "to": "execution",
+        "timestamp": "2024-12-10T14:35:00Z"
+      }
+    ]
+  },
+  "agents": {
+    "assignments_count": 8,
+    "results_count": 7,
+    "escalations_count": 0,
+    "active_agent": "engineer"
+  },
+  "task_tracking": [
+    {
+      "sequence": 1,
+      "agent_role": "architect",
+      "assignment_type": "planning",
+      "issue_id": "LIN-100",
+      "assignment_path": ".agents/session-{id}/assignments/01-architect-planning-LIN-100.json",
+      "result_path": ".agents/session-{id}/results/01-architect-planning-LIN-100.json",
+      "status": "complete",
+      "started_at": "2024-12-10T14:30:30Z",
+      "completed_at": "2024-12-10T14:32:15Z"
+    }
+    // ... more tasks
+  ],
+  "metrics": {
+    "total_tasks": 8,
+    "completed_tasks": 7,
+    "review_iterations": 1.2,
+    "divergences_count": 2
+  }
+}
+```
+
+This file provides a complete audit trail and allows coordinators to quickly understand session state without loading all individual files.
+
 ## Validation
 
 ### Before Sending to Agent
 
-- ✅ Required fields present
+- ✅ Assignment file written successfully
+- ✅ Expected result path specified
 - ✅ Issue ID valid (if using Linear)
 - ✅ Acceptance criteria are testable
 - ✅ Context is focused and relevant
-- ✅ Total token count <2000
+- ✅ File reference passed to agent (not full content)
 
 ### After Receiving from Agent
 
-- ✅ Required fields present
+- ✅ Result file exists at expected path
+- ✅ Result reference includes required fields (path, status, summary)
 - ✅ Status value is valid
-- ✅ Divergences include rationale
-- ✅ Artifacts list is complete
-- ✅ Output matches expected format
+- ✅ Timestamp present
+- ✅ Only load full result when needed for decision-making
 
 ### When Validation Fails
 
@@ -385,10 +728,13 @@ When agents encounter issues they can't resolve:
 
 ### When agent returns "blocked" or "needs_clarification"
 
-1. Switch to Recovery Mode (if in orchestration)
-2. Diagnose the blocker
-3. Provide additional context or escalate to user
-4. Track resolution for learning
+1. Agent writes escalation file to `.agents/session-{id}/escalations/`
+2. Agent returns reference with `status: "blocked"` and escalation path
+3. Coordinator loads escalation file only when deciding how to proceed
+4. Switch to Recovery Mode (if in orchestration)
+5. Diagnose the blocker
+6. Provide additional context or escalate to user
+7. Track resolution for learning
 
 ### When format is incorrect
 
@@ -396,43 +742,256 @@ When agents encounter issues they can't resolve:
 2. Ask agent to reformat with specific guidance
 3. If repeated failures, reassess task assignment
 
+### When file operations fail
+
+1. Check file path correctness
+2. Verify `.agents/` directory exists and is writable
+3. Ensure session directory was created properly
+4. Log error with full context for debugging
+
 ## Communication Efficiency
 
 ### Target Metrics
 
 | Metric | Target | Red Flag |
 |--------|--------|----------|
-| Context size | <2000 tokens | >2500 tokens |
+| Coordinator context size | <10K tokens | >20K tokens |
+| File reference size | <100 tokens | >200 tokens |
 | Communication rounds | 1-2 per issue | >3 rounds |
 | Clarification rate | <10% | >20% |
 | Format violations | 0% | Any |
+| Full file loads | <30% of results | >60% of results |
 
 ### Red Flags to Watch
 
 - >3 communication rounds for single issue
-- Agents requesting information already provided
+- Agents requesting information already in assignment files
 - Frequent format violations
-- Context size consistently >2500 tokens
+- Coordinator context consistently >20K tokens
 - Repeated need for clarification
+- Loading full results when summary would suffice
+
+### Context Efficiency Benefits
+
+**Traditional approach (stdout):**
+- 10 agents × 3K tokens/result = 30K tokens in coordinator context
+
+**File-based approach:**
+- 10 agents × 100 tokens/reference = 1K tokens in coordinator context
+- 29K token savings (97% reduction!)
+- Load full files only when decisions require detailed information
 
 ## Best Practices
 
 ### Do
 
-- ✅ Always specify expected output format
-- ✅ Include only task-relevant context
-- ✅ Be explicit about scope boundaries
-- ✅ Provide 2-3 relevant learnings maximum
-- ✅ Use consistent field names across handoffs
+- ✅ Always write assignments to files before passing to agents
+- ✅ Always write results to files before returning to coordinator
+- ✅ Pass file paths and summaries, not full content
+- ✅ Create session directories at workflow start
+- ✅ Use consistent naming conventions for files
+- ✅ Include timestamps in all result references
+- ✅ Specify expected result paths in assignments
+- ✅ Load full files only when needed for decisions
+- ✅ Update metadata.json throughout workflow
+- ✅ Be explicit about scope boundaries in assignments
+- ✅ Provide 2-3 relevant learnings maximum in assignment files
 - ✅ Include issue IDs for traceability
-- ✅ Validate before sending and after receiving
+- ✅ Reference other result files when context is needed
+- ✅ Keep result summaries concise (1-2 sentences)
+- ✅ Set `requires_attention` flag when coordinator action needed
 
 ### Don't
 
-- ❌ Include full file contents (use paths instead)
+- ❌ Pass full JSON in stdout/stdin (use file references)
+- ❌ Load full result files unless decision requires details
+- ❌ Include full file contents in assignments (use paths)
 - ❌ Send entire project history
-- ❌ Leave expected outputs ambiguous
-- ❌ Assign multiple unrelated tasks in one handoff
+- ❌ Leave expected result paths unspecified
+- ❌ Assign multiple unrelated tasks in one file
 - ❌ Use inconsistent status values
 - ❌ Omit acceptance criteria from assignments
 - ❌ Proceed with invalid agent responses
+- ❌ Store sensitive information in plain text files
+- ❌ Forget to create `.agents/` directory structure
+- ❌ Skip updating metadata.json
+
+### File Loading Strategy
+
+**Always load:**
+- Current task assignment (agent needs full context)
+- Escalations (coordinator must understand blockers)
+
+**Load on demand:**
+- Previous task results (only if current task depends on them)
+- Review feedback (only if rework is needed)
+- Planning details (only when making implementation decisions)
+
+**Never load:**
+- Completed task results from unrelated features
+- Historical results unless specifically referenced
+- Metadata files from other sessions
+
+## Practical Implementation Examples
+
+### Example 1: Coordinator Assigns Task to Engineer
+
+```python
+# 1. Coordinator creates assignment file
+assignment = {
+    "assignment_type": "implementation",
+    "issue_id": "LIN-123",
+    "task": {
+        "summary": "Add rate limiting to authentication endpoint",
+        "description": "Implement Redis-based rate limiting with 5 requests per minute"
+    },
+    "acceptance_criteria": [
+        "Rate limiting applied to /auth/login endpoint",
+        "Returns 429 status when limit exceeded",
+        "Rate limit info included in response headers"
+    ],
+    "relevant_context": {
+        "files": ["src/api/auth.py", "src/middleware/rate_limit.py"],
+        "reference_files": [
+            ".agents/session-20241210-140000/results/01-architect-planning-LIN-120.json"
+        ]
+    },
+    "expected_output": {
+        "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
+        "format": "implementation_result",
+        "required_fields": ["status", "summary", "artifacts"]
+    }
+}
+
+# Write to file
+write_json(".agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json", assignment)
+
+# 2. Pass reference to agent (not full content)
+agent_input = {
+    "assignment_path": ".agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json",
+    "summary": "Implement rate limiting on auth endpoint",
+    "expected_result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
+}
+
+# 3. Spawn agent with reference (agent will read file)
+spawn_agent("data-infra-engineer", agent_input)
+```
+
+### Example 2: Agent Reads Assignment and Returns Result
+
+```python
+# Agent receives reference
+agent_input = receive_input()
+# {
+#   "assignment_path": ".agents/.../assignments/02-engineer-implementation-LIN-123.json",
+#   "summary": "Implement rate limiting on auth endpoint",
+#   "expected_result_path": ".agents/.../results/02-engineer-implementation-LIN-123.json"
+# }
+
+# Agent loads full assignment
+assignment = read_json(agent_input["assignment_path"])
+
+# Agent does work...
+# ... implementation happens ...
+
+# Agent writes full result to file
+result = {
+    "result_type": "implementation",
+    "issue_id": "LIN-123",
+    "status": "complete",
+    "summary": "Rate limiting implemented using Redis with configurable thresholds",
+    "details": {
+        "approach": "Used Redis sorted sets for sliding window rate limiting",
+        "decisions": ["Chose sliding window over fixed window for smoother limits"]
+    },
+    "artifacts": {
+        "files_modified": ["src/api/auth.py", "src/middleware/rate_limit.py"],
+        "files_created": ["tests/test_rate_limit.py"],
+        "commit": "abc123def"
+    },
+    "divergences": [],
+    "blockers": []
+}
+
+write_json(agent_input["expected_result_path"], result)
+
+# Agent returns reference only (not full result)
+return {
+    "result_path": agent_input["expected_result_path"],
+    "result_type": "implementation",
+    "status": "complete",
+    "summary": "Rate limiting implemented using Redis with configurable thresholds",
+    "requires_attention": false,
+    "timestamp": "2024-12-10T14:35:22Z"
+}
+```
+
+### Example 3: Coordinator Maintains Minimal Context
+
+```python
+# Coordinator working state (stays small!)
+workflow_state = {
+    "session_id": "session-20241210-143022-implement-auth",
+    "current_phase": "implementation",
+    "tasks": {
+        "task_01": {
+            "result_path": ".agents/session-20241210-143022/results/01-architect-planning-LIN-120.json",
+            "summary": "Planned auth system with 5 sub-tasks",
+            "status": "complete",
+            "loaded": False  # Not in context
+        },
+        "task_02": {
+            "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
+            "summary": "Rate limiting implemented using Redis",
+            "status": "complete",
+            "loaded": False  # Not in context
+        }
+    }
+}
+
+# Only load full result when needed for decision
+if user_asks_about_task_02:
+    full_result = read_json(workflow_state["tasks"]["task_02"]["result_path"])
+    workflow_state["tasks"]["task_02"]["loaded"] = True
+    # Now have full details for answering user question
+```
+
+### Example 4: Agent References Previous Work
+
+```python
+# Assignment includes reference to previous result
+assignment = {
+    "assignment_type": "implementation",
+    "issue_id": "LIN-125",
+    "task": {
+        "summary": "Add rate limit monitoring dashboard"
+    },
+    "relevant_context": {
+        "reference_files": [
+            ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
+        ],
+        "learnings": ["Rate limiting uses Redis sorted sets, check implementation for key structure"]
+    }
+}
+
+# Agent loads referenced result when needed
+assignment = read_json(assignment_path)
+if assignment["relevant_context"]["reference_files"]:
+    # Load previous work to understand rate limiting implementation
+    previous_work = read_json(assignment["relevant_context"]["reference_files"][0])
+    # Now can build dashboard based on actual implementation
+```
+
+## Summary
+
+**Key Takeaway:** File-based communication dramatically reduces coordinator context usage (from 30K+ tokens to <2K tokens for 10 agent interactions) while providing complete audit trails, debugging capability, and recovery resilience.
+
+**Implementation checklist:**
+1. ✅ Create `.agents/session-{id}/` directories at workflow start
+2. ✅ Write all assignments to `assignments/` subdirectory
+3. ✅ Write all results to `results/` subdirectory  
+4. ✅ Pass file paths + summaries between agents, not full content
+5. ✅ Load full files only when decisions require details
+6. ✅ Maintain `metadata.json` for session tracking
+7. ✅ Use consistent naming conventions
+8. ✅ Add `.agents/` to `.gitignore` for ephemeral sessions
