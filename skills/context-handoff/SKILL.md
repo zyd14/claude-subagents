@@ -1,6 +1,6 @@
 ---
 name: context-handoff
-description: Structured patterns for passing context between agents, phases, and workflows. Ensures clear communication with minimal overhead through standardized JSON formats and focused context principles.
+description: Structured patterns for passing context between agents, phases, and workflows. Ensures clear communication with minimal overhead through standardized JSON formats and focused context principles. Use when needing to manage communication between multiple agents.
 allowed-tools: Read, Write, Edit, Glob, Grep
 ---
 

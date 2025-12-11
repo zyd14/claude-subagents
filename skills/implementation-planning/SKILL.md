@@ -1,6 +1,6 @@
 ---
 name: implementation-planning
-description: Patterns for breaking down features into implementable tasks. Covers task decomposition, dependency mapping, acceptance criteria generation, and estimation - applicable with or without Linear integration.
+description: Patterns for breaking down features into implementable tasks. Covers task decomposition, dependency mapping, acceptance criteria generation, and estimation - applicable with or without Linear integration. Use when developing a solution or implementation plan for a problem or issue.
 allowed-tools: Bash, Edit, Write, NotebookEdit, Skill, SlashCommand, Glob, Grep, Read, WebFetch, TodoWrite, WebSearch, BashOutput, mcp__ide__getDiagnostics, mcp__context7__resolve-library-id, mcp__context7__get-library-docs, mcp__memory2__create_entities, mcp__memory2__create_relations, mcp__memory2__add_observations, mcp__memory2__read_graph, mcp__memory2__search_nodes, mcp__memory2__open_nodes
 ---
 
