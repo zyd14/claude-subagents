@@ -12,16 +12,30 @@ This skill provides patterns for efficient context transfer between agents, work
 
 **This skill includes JSON schema validation utilities!** 
 
-Use ~/.claude/skills/context-handoff/scripts/context_handoff.py for validated read/write functions:
-- `write_assignment()` / `read_assignment()` - Validated assignment files
-- `write_result()` / `read_result()` - Validated result files  
-- `create_result_reference()` - Create lightweight result references
-- `create_session_directory()` - Set up session structure
-- `generate_session_id()` - Generate timestamped session IDs
+Use `~/.claude/skills/context-handoff/scripts/context_handoff.py` for validated operations:
 
-All schemas are in `schemas/` directory. Run `uv run example.py` to see a complete workflow.
+**CLI Commands:**
+- `context_handoff.py write <schema> <source> <dest>` - Validate and write JSON (validates BEFORE writing to disk)
+- `context_handoff.py validate <schema> <file>` - Validate existing JSON file against schema
+- `context_handoff.py create-session <workflow-name>` - Create session directory structure
 
-**Key benefit:** Validation catches errors at write time, ensuring all messages conform to expected formats.
+**Schema types:** `assignment`, `result`, `result_reference`, `assignment_reference`
+
+**Examples:**
+```bash
+# Write validated assignment (rejects invalid files BEFORE writing)
+context_handoff.py write assignment input.json .agents/session-x/assignments/01.json
+
+# Validate existing file
+context_handoff.py validate result .agents/session-x/results/01.json
+
+# Create session
+context_handoff.py create-session my-workflow
+```
+
+Run `context_handoff.py --help` for full documentation. Run `example.py` to see complete workflow.
+
+**Key benefit:** Validation happens BEFORE writing - invalid files never touch disk.
 
 ## When to Use This Skill
 
@@ -109,75 +123,106 @@ With file-based communication, coordinators maintain minimal context:
 
 ### Step 1: Coordinator Creates Assignment
 
-```python
-# Coordinator writes assignment to file
-assignment = {
-    "assignment_type": "implementation",
-    "issue_id": "LIN-123",
-    # ... full assignment details
-}
-
-assignment_path = ".agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json"
-write_json_file(assignment_path, assignment)
-
-# Coordinator passes reference to agent
-agent_input = {
-    "assignment_path": assignment_path,
+```bash
+# 1. Coordinator creates assignment JSON (however you want - code, template, etc.)
+cat > assignment.json << 'EOF'
+{
+  "assignment_type": "implementation",
+  "issue_id": "LIN-123",
+  "task": {
     "summary": "Implement user authentication middleware",
-    "expected_result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
+    "description": "Use JWT-based authentication"
+  },
+  "acceptance_criteria": [
+    "Middleware validates JWT tokens",
+    "Returns 401 for invalid tokens",
+    "Extracts user from token"
+  ],
+  "expected_output": {
+    "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
+    "format": "implementation_result",
+    "required_fields": ["status", "summary", "artifacts"]
+  }
+}
+EOF
+
+# 2. Write validated assignment (validates BEFORE writing to disk)
+context_handoff.py write assignment assignment.json \
+  .agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json
+
+# 3. Pass reference to agent (not full content)
+# This is what agent receives - lightweight reference
+{
+  "assignment_path": ".agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json",
+  "summary": "Implement user authentication middleware",
+  "expected_result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
 }
 ```
 
 ### Step 2: Agent Reads Assignment
 
-```python
-# Agent receives reference, loads full content
-agent_input = receive_input()  # Gets path + summary
-assignment = read_json_file(agent_input["assignment_path"])
+```bash
+# Agent receives reference, validates and loads full content
+context_handoff.py validate assignment \
+  .agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json
 
-# Agent works on task...
+# Agent can read the file to work with it
+# (or use jq, Python, whatever)
 ```
 
 ### Step 3: Agent Writes Result
 
-```python
-# Agent writes full result to file
-result = {
-    "result_type": "implementation",
-    "status": "complete",
-    # ... full result details
+```bash
+# 1. Agent creates result JSON after doing work
+cat > result.json << 'EOF'
+{
+  "result_type": "implementation",
+  "issue_id": "LIN-123",
+  "status": "complete",
+  "summary": "Successfully implemented auth middleware with JWT validation",
+  "details": {
+    "approach": "Created middleware using jsonwebtoken library",
+    "decisions": ["Used RS256 for security"]
+  },
+  "artifacts": {
+    "files_modified": ["src/api/auth.py", "src/middleware/auth.py"],
+    "files_created": ["tests/test_auth.py"]
+  },
+  "divergences": [],
+  "blockers": []
 }
+EOF
 
-result_path = agent_input["expected_result_path"]
-write_json_file(result_path, result)
+# 2. Write validated result (validates BEFORE writing to disk)
+context_handoff.py write result result.json \
+  .agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json
+```
 
-# Agent returns reference only
-return {
-    "result_path": result_path,
-    "summary": "Successfully implemented auth middleware in 3 files",
-    "status": "complete",
-    "requires_attention": False
+### Step 4: Agent Returns Reference
+
+```bash
+# Agent returns only reference (not full result)
+# This keeps coordinator context small
+{
+  "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
+  "result_type": "implementation",
+  "status": "complete",
+  "summary": "Successfully implemented auth middleware with JWT validation",
+  "requires_attention": false,
+  "timestamp": "2024-12-10T14:35:22Z"
 }
 ```
 
-### Step 4: Coordinator Receives Reference
+### Step 5: Coordinator Receives Reference
 
-```python
-# Coordinator receives reference (not full result)
-agent_output = receive_from_agent()
-
-# Store reference in working state
-workflow_state["tasks"]["task_02"] = {
-    "result_path": agent_output["result_path"],
-    "summary": agent_output["summary"],
-    "status": agent_output["status"],
-    "loaded": False  # Full content not in context
-}
-
-# Only load full result when needed
-if need_detailed_review:
-    full_result = read_json_file(agent_output["result_path"])
-    workflow_state["tasks"]["task_02"]["loaded"] = True
+```bash
+# Coordinator stores reference in working state (not full result)
+# Load full result ONLY if needed for decision
+if [ "$status" = "blocked" ]; then
+  context_handoff.py validate result \
+    .agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json
+  # Now read full result to understand blocker
+fi
 ```
 
 ## Assignment Formats
@@ -784,7 +829,7 @@ This file provides a complete audit trail and allows coordinators to quickly und
 - Frequent format violations
 - Coordinator context consistently >20K tokens
 - Repeated need for clarification
-- Loading full results when summary would suffice
+- Loading full results when summary or grep search would suffice
 
 ### Context Efficiency Benefits
 
@@ -851,150 +896,162 @@ This file provides a complete audit trail and allows coordinators to quickly und
 
 ### Example 1: Coordinator Assigns Task to Engineer
 
-```python
-# 1. Coordinator creates assignment file
-assignment = {
-    "assignment_type": "implementation",
-    "issue_id": "LIN-123",
-    "task": {
-        "summary": "Add rate limiting to authentication endpoint",
-        "description": "Implement Redis-based rate limiting with 5 requests per minute"
-    },
-    "acceptance_criteria": [
-        "Rate limiting applied to /auth/login endpoint",
-        "Returns 429 status when limit exceeded",
-        "Rate limit info included in response headers"
-    ],
-    "relevant_context": {
-        "files": ["src/api/auth.py", "src/middleware/rate_limit.py"],
-        "reference_files": [
-            ".agents/session-20241210-140000/results/01-architect-planning-LIN-120.json"
-        ]
-    },
-    "expected_output": {
-        "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
-        "format": "implementation_result",
-        "required_fields": ["status", "summary", "artifacts"]
-    }
+```bash
+# 1. Create session
+context_handoff.py create-session implement-auth
+
+# 2. Create assignment JSON
+cat > assignment.json << 'EOF'
+{
+  "assignment_type": "implementation",
+  "issue_id": "LIN-123",
+  "task": {
+    "summary": "Add rate limiting to authentication endpoint",
+    "description": "Implement Redis-based rate limiting with 5 requests per minute"
+  },
+  "acceptance_criteria": [
+    "Rate limiting applied to /auth/login endpoint",
+    "Returns 429 status when limit exceeded",
+    "Rate limit info included in response headers"
+  ],
+  "relevant_context": {
+    "files": ["src/api/auth.py", "src/middleware/rate_limit.py"],
+    "reference_files": [
+      ".agents/session-20241210-140000/results/01-architect-planning-LIN-120.json"
+    ]
+  },
+  "expected_output": {
+    "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
+    "format": "implementation_result",
+    "required_fields": ["status", "summary", "artifacts"]
+  }
 }
+EOF
 
-# Write to file
-write_json(".agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json", assignment)
+# 3. Write validated assignment
+context_handoff.py write assignment assignment.json \
+  .agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json
 
-# 2. Pass reference to agent (not full content)
-agent_input = {
-    "assignment_path": ".agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json",
-    "summary": "Implement rate limiting on auth endpoint",
-    "expected_result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
-}
-
-# 3. Spawn agent with reference (agent will read file)
-spawn_agent("data-infra-engineer", agent_input)
+# 4. Pass reference to agent (lightweight - just path and summary)
+echo '{
+  "assignment_path": ".agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json",
+  "summary": "Implement rate limiting on auth endpoint",
+  "expected_result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
+}' | spawn_agent data-infra-engineer
 ```
 
 ### Example 2: Agent Reads Assignment and Returns Result
 
-```python
+```bash
 # Agent receives reference
-agent_input = receive_input()
 # {
 #   "assignment_path": ".agents/.../assignments/02-engineer-implementation-LIN-123.json",
 #   "summary": "Implement rate limiting on auth endpoint",
 #   "expected_result_path": ".agents/.../results/02-engineer-implementation-LIN-123.json"
 # }
 
-# Agent loads full assignment
-assignment = read_json(agent_input["assignment_path"])
+# Agent validates and loads assignment
+context_handoff.py validate assignment \
+  .agents/session-20241210-143022/assignments/02-engineer-implementation-LIN-123.json
 
 # Agent does work...
 # ... implementation happens ...
 
-# Agent writes full result to file
-result = {
-    "result_type": "implementation",
-    "issue_id": "LIN-123",
-    "status": "complete",
-    "summary": "Rate limiting implemented using Redis with configurable thresholds",
-    "details": {
-        "approach": "Used Redis sorted sets for sliding window rate limiting",
-        "decisions": ["Chose sliding window over fixed window for smoother limits"]
-    },
-    "artifacts": {
-        "files_modified": ["src/api/auth.py", "src/middleware/rate_limit.py"],
-        "files_created": ["tests/test_rate_limit.py"],
-        "commit": "abc123def"
-    },
-    "divergences": [],
-    "blockers": []
+# Agent creates result JSON
+cat > result.json << 'EOF'
+{
+  "result_type": "implementation",
+  "issue_id": "LIN-123",
+  "status": "complete",
+  "summary": "Rate limiting implemented using Redis with configurable thresholds",
+  "details": {
+    "approach": "Used Redis sorted sets for sliding window rate limiting",
+    "decisions": ["Chose sliding window over fixed window for smoother limits"]
+  },
+  "artifacts": {
+    "files_modified": ["src/api/auth.py", "src/middleware/rate_limit.py"],
+    "files_created": ["tests/test_rate_limit.py"],
+    "commit": "abc123def"
+  },
+  "divergences": [],
+  "blockers": []
 }
+EOF
 
-write_json(agent_input["expected_result_path"], result)
+# Agent writes validated result
+context_handoff.py write result result.json \
+  .agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json
 
 # Agent returns reference only (not full result)
-return {
-    "result_path": agent_input["expected_result_path"],
-    "result_type": "implementation",
-    "status": "complete",
-    "summary": "Rate limiting implemented using Redis with configurable thresholds",
-    "requires_attention": false,
-    "timestamp": "2024-12-10T14:35:22Z"
-}
+echo '{
+  "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
+  "result_type": "implementation",
+  "status": "complete",
+  "summary": "Rate limiting implemented using Redis with configurable thresholds",
+  "requires_attention": false,
+  "timestamp": "2024-12-10T14:35:22Z"
+}'
 ```
 
 ### Example 3: Coordinator Maintains Minimal Context
 
-```python
+```bash
 # Coordinator working state (stays small!)
-workflow_state = {
-    "session_id": "session-20241210-143022-implement-auth",
-    "current_phase": "implementation",
-    "tasks": {
-        "task_01": {
-            "result_path": ".agents/session-20241210-143022/results/01-architect-planning-LIN-120.json",
-            "summary": "Planned auth system with 5 sub-tasks",
-            "status": "complete",
-            "loaded": False  # Not in context
-        },
-        "task_02": {
-            "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
-            "summary": "Rate limiting implemented using Redis",
-            "status": "complete",
-            "loaded": False  # Not in context
-        }
+# Store only references, not full results
+
+cat > workflow_state.json << 'EOF'
+{
+  "session_id": "session-20241210-143022-implement-auth",
+  "current_phase": "implementation",
+  "tasks": {
+    "task_01": {
+      "result_path": ".agents/session-20241210-143022/results/01-architect-planning-LIN-120.json",
+      "summary": "Planned auth system with 5 sub-tasks",
+      "status": "complete",
+      "loaded": false
+    },
+    "task_02": {
+      "result_path": ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json",
+      "summary": "Rate limiting implemented using Redis",
+      "status": "complete",
+      "loaded": false
     }
+  }
 }
+EOF
 
 # Only load full result when needed for decision
-if user_asks_about_task_02:
-    full_result = read_json(workflow_state["tasks"]["task_02"]["result_path"])
-    workflow_state["tasks"]["task_02"]["loaded"] = True
-    # Now have full details for answering user question
+if user_asks_about_task_02; then
+  context_handoff.py validate result \
+    .agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json
+  # Now have full details for answering user question
+fi
 ```
 
 ### Example 4: Agent References Previous Work
 
-```python
+```bash
 # Assignment includes reference to previous result
-assignment = {
-    "assignment_type": "implementation",
-    "issue_id": "LIN-125",
-    "task": {
-        "summary": "Add rate limit monitoring dashboard"
-    },
-    "relevant_context": {
-        "reference_files": [
-            ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
-        ],
-        "learnings": ["Rate limiting uses Redis sorted sets, check implementation for key structure"]
-    }
+cat > assignment.json << 'EOF'
+{
+  "assignment_type": "implementation",
+  "issue_id": "LIN-125",
+  "task": {
+    "summary": "Add rate limit monitoring dashboard"
+  },
+  "relevant_context": {
+    "reference_files": [
+      ".agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json"
+    ],
+    "learnings": ["Rate limiting uses Redis sorted sets, check implementation for key structure"]
+  }
 }
+EOF
 
-# Agent loads referenced result when needed
-assignment = read_json(assignment_path)
-if assignment["relevant_context"]["reference_files"]:
-    # Load previous work to understand rate limiting implementation
-    previous_work = read_json(assignment["relevant_context"]["reference_files"][0])
-    # Now can build dashboard based on actual implementation
+# Agent can load referenced result when needed
+context_handoff.py validate result \
+  .agents/session-20241210-143022/results/02-engineer-implementation-LIN-123.json
+# Now can read previous work to understand rate limiting implementation
 ```
 
 ## Summary
