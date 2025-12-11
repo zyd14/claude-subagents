@@ -261,30 +261,137 @@ def generate_session_id(workflow_name: str) -> str:
 
 # CLI for testing
 if __name__ == "__main__":
+    import argparse
     import sys
     
-    if len(sys.argv) < 2:
-        print("Usage:")
-        print("  Validate file:  uv run context_handoff.py validate <schema_name> <file_path>")
-        print("  Create session: uv run context_handoff.py create-session <workflow_name>")
-        print("\nExamples:")
-        print("  uv run context_handoff.py validate assignment .agents/session-x/assignments/01.json")
-        print("  uv run context_handoff.py create-session implement-auth")
+    parser = argparse.ArgumentParser(
+        description="Context Handoff validation utilities for agent communication",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Write a validated assignment (validates before writing to disk)
+  uv run context_handoff.py write assignment input.json .agents/session-x/assignments/01.json
+  cat input.json | uv run context_handoff.py write assignment - .agents/session-x/results/01.json
+  
+  # Validate an existing file
+  uv run context_handoff.py validate assignment .agents/session-x/assignments/01.json
+  
+  # Create a new session directory
+  uv run context_handoff.py create-session implement-auth
+  
+  # Run the complete example
+  uv run example.py
+        """
+    )
+    
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Write command (validates then writes)
+    write_parser = subparsers.add_parser(
+        "write",
+        help="Validate JSON and write to file (validation happens before writing)"
+    )
+    write_parser.add_argument(
+        "schema_name",
+        choices=["assignment", "result", "result_reference", "assignment_reference"],
+        help="Schema to validate against"
+    )
+    write_parser.add_argument(
+        "source",
+        help="Source JSON file (use '-' for stdin)"
+    )
+    write_parser.add_argument(
+        "destination",
+        help="Destination path to write validated file"
+    )
+    write_parser.add_argument(
+        "--no-create-dirs",
+        action="store_true",
+        help="Don't create parent directories (default: creates them)"
+    )
+    
+    # Validate command
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Validate an existing JSON file against a schema"
+    )
+    validate_parser.add_argument(
+        "schema_name",
+        choices=["assignment", "result", "result_reference", "assignment_reference"],
+        help="Schema to validate against"
+    )
+    validate_parser.add_argument(
+        "file_path",
+        help="Path to JSON file to validate"
+    )
+    
+    # Create session command
+    session_parser = subparsers.add_parser(
+        "create-session",
+        help="Create a new session directory structure"
+    )
+    session_parser.add_argument(
+        "workflow_name",
+        help="Name of the workflow (e.g., implement-auth)"
+    )
+    session_parser.add_argument(
+        "--base-dir",
+        default=".agents",
+        help="Base directory for agent files (default: .agents)"
+    )
+    
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
         sys.exit(1)
     
-    command = sys.argv[1]
-    
-    if command == "validate":
-        if len(sys.argv) != 4:
-            print("Usage: uv run context_handoff.py validate <schema_name> <file_path>")
-            sys.exit(1)
-        
-        schema_name = sys.argv[2]
-        file_path = sys.argv[3]
-        
+    if args.command == "write":
         try:
-            data = read_json_validated(file_path, schema_name)
-            print(f"✅ Valid {schema_name}: {file_path}")
+            # Read source JSON
+            if args.source == "-":
+                # Read from stdin
+                data = json.load(sys.stdin)
+                source_desc = "stdin"
+            else:
+                # Read from file
+                with open(args.source) as f:
+                    data = json.load(f)
+                source_desc = args.source
+            
+            # Validate before writing
+            validate_json(data, args.schema_name)
+            
+            # Write validated JSON to destination
+            write_json_validated(
+                args.destination,
+                data,
+                args.schema_name,
+                create_dirs=not args.no_create_dirs
+            )
+            
+            print(f"✅ Validated and wrote {args.schema_name}")
+            print(f"   Source: {source_desc}")
+            print(f"   Destination: {args.destination}")
+            print(f"   Status: {data.get('status', 'N/A')}")
+            print(f"   Summary: {data.get('summary', data.get('task', {}).get('summary', 'N/A'))}")
+            
+        except ValidationError as e:
+            print(f"❌ Validation failed - file NOT written")
+            print(f"   Error: {e.message}")
+            print(f"   Path: {' -> '.join(str(p) for p in e.path)}")
+            sys.exit(1)
+        except FileNotFoundError as e:
+            print(f"❌ Source file not found: {e}")
+            sys.exit(1)
+        except json.JSONDecodeError as e:
+            print(f"❌ Invalid JSON: {e}")
+            sys.exit(1)
+    
+    elif args.command == "validate":
+        try:
+            data = read_json_validated(args.file_path, args.schema_name)
+            print(f"✅ Valid {args.schema_name}: {args.file_path}")
             print(f"   Status: {data.get('status', 'N/A')}")
             print(f"   Summary: {data.get('summary', data.get('task', {}).get('summary', 'N/A'))}")
         except ValidationError as e:
@@ -295,14 +402,9 @@ if __name__ == "__main__":
             print(f"❌ File not found: {e}")
             sys.exit(1)
     
-    elif command == "create-session":
-        if len(sys.argv) != 3:
-            print("Usage: uv run context_handoff.py create-session <workflow_name>")
-            sys.exit(1)
-        
-        workflow_name = sys.argv[2]
-        session_id = generate_session_id(workflow_name)
-        session_dir = create_session_directory(session_id)
+    elif args.command == "create-session":
+        session_id = generate_session_id(args.workflow_name)
+        session_dir = create_session_directory(session_id, args.base_dir)
         
         print(f"✅ Created session: {session_id}")
         print(f"   Directory: {session_dir}")
@@ -310,7 +412,3 @@ if __name__ == "__main__":
         print(f"   Results: {session_dir / 'results'}")
         print(f"   Escalations: {session_dir / 'escalations'}")
         print(f"   Metadata: {session_dir / 'metadata.json'}")
-    
-    else:
-        print(f"Unknown command: {command}")
-        sys.exit(1)

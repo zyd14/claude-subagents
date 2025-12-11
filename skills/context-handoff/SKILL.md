@@ -12,7 +12,7 @@ This skill provides patterns for efficient context transfer between agents, work
 
 **This skill includes JSON schema validation utilities!** 
 
-See `context_handoff.py` for validated read/write functions:
+Use ~/.claude/skills/context-handoff/scripts/context_handoff.py for validated read/write functions:
 - `write_assignment()` / `read_assignment()` - Validated assignment files
 - `write_result()` / `read_result()` - Validated result files  
 - `create_result_reference()` - Create lightweight result references

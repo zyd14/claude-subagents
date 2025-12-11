@@ -6,36 +6,32 @@ All agent communication uses file-based storage to minimize context usage and pr
 
 ### Quick Start
 
+**Preferred approach: Use CLI to write validated files**
+
 1. **Create session directory** at workflow start:
-   ```
-   .agents/session-{YYYYMMDD-HHMMSS}-{workflow-name}/
-   ```
-
-2. **Write assignment** to file:
-   ```
-   .agents/session-{id}/assignments/{seq}-{role}-{type}-{issue}.json
+   ```bash
+   uv run context_handoff.py create-session my-workflow
    ```
 
-3. **Pass reference** to agent (not full content):
+2. **Write validated assignment** (validates BEFORE writing):
+   ```bash
+   uv run context_handoff.py write assignment input.json .agents/session-{id}/assignments/01.json
+   ```
+
+3. **Agent reads** assignment:
+   ```bash
+   uv run context_handoff.py validate assignment .agents/session-{id}/assignments/01.json
+   ```
+
+4. **Agent writes validated result** (validates BEFORE writing):
+   ```bash
+   uv run context_handoff.py write result result.json .agents/session-{id}/results/01.json
+   ```
+
+5. **Agent returns lightweight reference** (in stdout/return value):
    ```json
    {
-     "assignment_path": "...",
-     "summary": "One sentence task description",
-     "expected_result_path": "..."
-   }
-   ```
-
-4. **Agent reads** assignment from file
-
-5. **Agent writes result** to file:
-   ```
-   .agents/session-{id}/results/{seq}-{role}-{type}-{issue}.json
-   ```
-
-6. **Agent returns reference** (not full result):
-   ```json
-   {
-     "result_path": "...",
+     "result_path": ".agents/session-{id}/results/01.json",
      "status": "complete",
      "summary": "One sentence outcome",
      "requires_attention": false,
@@ -43,7 +39,37 @@ All agent communication uses file-based storage to minimize context usage and pr
    }
    ```
 
-7. **Coordinator loads full result** only when needed
+6. **Coordinator loads full result** only when needed
+
+## CLI Commands
+
+### Write (Validates Before Writing)
+
+**Recommended for all file creation:**
+
+```bash
+# Write from file
+uv run context_handoff.py write assignment input.json output.json
+
+# Write from stdin (for programmatic generation)
+cat data.json | uv run context_handoff.py write result - output.json
+
+# Invalid files are rejected BEFORE writing
+# ❌ File NOT written if validation fails
+```
+
+### Validate (Check Existing Files)
+
+```bash
+uv run context_handoff.py validate assignment .agents/session-x/assignments/01.json
+```
+
+### Create Session
+
+```bash
+uv run context_handoff.py create-session workflow-name
+uv run context_handoff.py create-session workflow-name --base-dir /custom/path
+```
 
 ## Directory Structure
 

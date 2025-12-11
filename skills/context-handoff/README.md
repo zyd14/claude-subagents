@@ -28,7 +28,50 @@ This creates:
   └── metadata.json
 ```
 
-### 2. Use in Python
+### 2. Write Validated Files
+
+**The preferred way to create files - validates BEFORE writing to disk:**
+
+```bash
+# Write from a file (validates then writes)
+uv run context_handoff.py write assignment my-assignment.json .agents/session-x/assignments/01.json
+
+# Write from stdin (useful for programmatic generation)
+cat my-assignment.json | uv run context_handoff.py write assignment - .agents/session-x/assignments/01.json
+
+# Write result
+uv run context_handoff.py write result my-result.json .agents/session-x/results/01.json
+
+# Invalid files are rejected before writing
+uv run context_handoff.py write assignment invalid.json .agents/session-x/assignments/bad.json
+# ❌ Validation failed - file NOT written
+```
+
+### 3. Validate Existing Files
+
+```bash
+# Get help
+uv run context_handoff.py --help
+uv run context_handoff.py write --help
+uv run context_handoff.py validate --help
+uv run context_handoff.py create-session --help
+
+# Validate an assignment file
+uv run context_handoff.py validate assignment .agents/session-x/assignments/01.json
+
+# Validate a result file
+uv run context_handoff.py validate result .agents/session-x/results/01.json
+
+# Validate a result reference
+uv run context_handoff.py validate result_reference .agents/session-x/results/ref.json
+
+# Create session with custom base directory
+uv run context_handoff.py create-session my-workflow --base-dir /custom/path
+```
+
+### 4. Use in Python (Alternative to CLI)
+
+**Note:** For most use cases, prefer the CLI `write` command which validates before writing. Use Python API when you need programmatic control.
 
 ```python
 from context_handoff import (
@@ -83,14 +126,44 @@ result_ref = create_result_reference(
 )
 ```
 
-### 3. Validate Existing Files
+## CLI Commands
+
+### `write` - Validate and Write (Recommended)
+
+**Validates JSON before writing to disk.** Invalid files are rejected and NOT written.
 
 ```bash
-# Validate an assignment file
-uv run context_handoff.py validate assignment .agents/session-x/assignments/01.json
+# Write from file
+uv run context_handoff.py write assignment input.json output.json
 
-# Validate a result file
-uv run context_handoff.py validate result .agents/session-x/results/01.json
+# Write from stdin
+cat data.json | uv run context_handoff.py write result - .agents/session-x/results/01.json
+
+# Don't create parent directories
+uv run context_handoff.py write assignment input.json output.json --no-create-dirs
+```
+
+**Benefits:**
+- ✅ Catches errors before files are created
+- ✅ Prevents invalid data from entering the system
+- ✅ Clear error messages when validation fails
+- ✅ Works with stdin for programmatic use
+
+### `validate` - Validate Existing Files
+
+Check if existing files conform to schemas:
+
+```bash
+uv run context_handoff.py validate assignment .agents/session-x/assignments/01.json
+```
+
+### `create-session` - Initialize Session Directory
+
+Create the directory structure for a new workflow:
+
+```bash
+uv run context_handoff.py create-session workflow-name
+uv run context_handoff.py create-session workflow-name --base-dir /custom/path
 ```
 
 ## Examples

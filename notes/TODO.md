@@ -14,4 +14,4 @@ project-specific useful skills:
 ### sending / receiving a slack message
 This could be super useful for when claude has questions - it's really easy to lose track of the terminal and have claude waiting on you. Maybe you could even have a skill for retrieving messages so it could poll and you could just respond to its message in slack
 
-### protobuf write skill
+### break up context-handoff into multiple skills
