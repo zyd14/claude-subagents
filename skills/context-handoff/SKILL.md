@@ -8,6 +8,21 @@ allowed-tools: Read, Write, Edit, Glob, Grep
 
 This skill provides patterns for efficient context transfer between agents, workflow phases, and systems. Good context handoff is critical for multi-agent coordination - too little context causes errors, too much wastes tokens and confuses focus.
 
+## Validation Utilities Available
+
+**This skill includes JSON schema validation utilities!** 
+
+See `context_handoff.py` for validated read/write functions:
+- `write_assignment()` / `read_assignment()` - Validated assignment files
+- `write_result()` / `read_result()` - Validated result files  
+- `create_result_reference()` - Create lightweight result references
+- `create_session_directory()` - Set up session structure
+- `generate_session_id()` - Generate timestamped session IDs
+
+All schemas are in `schemas/` directory. Run `uv run example.py` to see a complete workflow.
+
+**Key benefit:** Validation catches errors at write time, ensuring all messages conform to expected formats.
+
 ## When to Use This Skill
 
 - Assigning work to subagents
