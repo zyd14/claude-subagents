@@ -431,9 +431,14 @@ def process_batch(config: ProcessingConfig) -> list[TaskResult]:
 ```python
 from pydantic import BaseModel, Field, field_validator
 
-class UserCreateRequest(BaseModel):
+class StrictBaseModel(BaseModel):
+    """ Base class for enforcing frozen / forbidden extras.
+        Always forbid extra attributes unless parsing data where some keys are unknown or may change. Prefer using frozen instances where possible. 
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+class UserCreateRequest(StrictBaseModel):
     """API request to create a user."""
-    
     email: str = Field(..., description="User email address")
     password: str = Field(..., min_length=8, description="User password")
     name: str = Field(..., min_length=1, description="User display name")
@@ -446,26 +451,13 @@ class UserCreateRequest(BaseModel):
             raise ValueError("Invalid email format")
         return v.lower()
 
-
 class UserResponse(BaseModel):
     """API response containing user data."""
-    
+    model_config = ConfigDict(extra="forbid", frozen=True)  # 
     user_id: str
     email: str
     name: str
     created_at: str
-    
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
-            "example": {
-                "user_id": "usr_123",
-                "email": "user@example.com",
-                "name": "John Doe",
-                "created_at": "2024-12-10T14:30:00Z"
-            }
-        }
-
 
 def create_user_endpoint(request: UserCreateRequest) -> UserResponse:
     """API endpoint handler with validated request/response."""
@@ -493,7 +485,6 @@ def create_user(email: str, password: str, name: str) -> dict:
         "created_at": datetime.now().isoformat()
     }
 
-
 def process_user(user: dict) -> dict:
     """Dict parameters are opaque - what keys are expected?"""
     # Typo here would cause runtime error
@@ -505,7 +496,6 @@ def process_user(user: dict) -> dict:
         "processed": True,
         "user_email": email
     }
-
 
 def get_config() -> dict:
     """Configuration as dict - no IDE support, no validation."""
@@ -531,7 +521,6 @@ class TaskStatus(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
-
 @dataclass
 class Task:
     """Task with status enum."""
@@ -551,7 +540,6 @@ class Task:
             TaskStatus.CANCELLED
         )
 
-
 # Literal for simple constrained strings
 LogLevel = Literal["debug", "info", "warning", "error"]
 
@@ -563,7 +551,6 @@ def log_message(message: str, level: LogLevel = "info") -> None:
         level: Log level (must be debug, info, warning, or error)
     """
     print(f"[{level.upper()}] {message}")
-
 
 # Type checker catches invalid usage
 log_message("Hello", level="info")  # ✅ OK
@@ -590,7 +577,6 @@ log_message("Error occurred", level="CRITICAL")  # Is this valid?
 log_message("Debug info", level="trace")  # Or this?
 log_message("Info", level="iNfO")  # Or this?
 ```
-
 ---
 
 ## Error Handling
@@ -602,11 +588,9 @@ class DataFetchError(Exception):
     """Raised when data fetching fails."""
     pass
 
-
 class ValidationError(Exception):
     """Raised when validation fails."""
     pass
-
 
 def fetch_user_data(user_id: str) -> dict[str, str]:
     """Fetch user data from API.
@@ -627,7 +611,6 @@ def fetch_user_data(user_id: str) -> dict[str, str]:
     
     return response.json()
 
-
 def validate_user_data(data: dict[str, str]) -> None:
     """Validate user data structure.
     
@@ -643,7 +626,6 @@ def validate_user_data(data: dict[str, str]) -> None:
     if missing:
         # Let exception bubble up
         raise ValidationError(f"Missing required fields: {missing}")
-
 
 def process_user(user_id: str) -> dict[str, str]:
     """Process user by ID.
@@ -681,15 +663,6 @@ def main() -> None:
 ### ❌ Bad: Fallback Logic in Exception Handlers
 
 ```python
-def fetch_user_data(user_id: str) -> dict:
-    """Fetch with silent fallback - hides errors!"""
-    try:
-        response = requests.get(f"/api/users/{user_id}")
-        return response.json()
-    except Exception:
-        # Bad: Silent fallback hides real problems
-        return {}
-
 
 def get_config(path: str) -> dict:
     """Config with fallback - errors go unnoticed."""
@@ -702,7 +675,9 @@ def get_config(path: str) -> dict:
     except json.JSONDecodeError:
         # Bad: Malformed JSON but we ignore it
         return {}
-
+    except Exception:
+        # Bad: Silent fallback hides real problems
+        return {}
 
 def process_data(data: list[dict]) -> list[dict]:
     """Process with fallback - partial failures hidden."""
@@ -744,7 +719,6 @@ def parse_config_file(path: str) -> dict[str, str]:
         raise ValueError(f"Config missing required_field: {path}")
     
     return config
-
 
 def fetch_with_retry(url: str, max_retries: int = 3) -> bytes:
     """Fetch URL with retries for transient errors.
@@ -799,19 +773,6 @@ def process_item(item: dict) -> dict:
         logger.error(f"Processing failed: {e}")
         return {}
 
-
-def fetch_data(url: str) -> dict:
-    """Broad catch masks specific failures."""
-    try:
-        response = requests.get(url)
-        data = response.json()
-        return process(data)
-    except Exception:
-        # Bad: Catches network errors, JSON errors, processing errors all the same
-        # Can't distinguish between transient vs permanent failures
-        return {"error": True}
-
-
 def run_task(task_id: str) -> None:
     """Catches everything including KeyboardInterrupt!"""
     try:
@@ -849,13 +810,11 @@ def parse_value(value: str) -> int | float:
             # Nested exception handling for control flow
             return 0
 
-
 # Better approach:
 def find_user_by_email(email: str) -> User | None:
     """Return None for not found - no exception needed."""
     user = db.query_one("SELECT * FROM users WHERE email = ?", (email,))
     return User.from_dict(user) if user else None
-
 
 def parse_value(value: str) -> int | float:
     """Explicit type checking."""
@@ -868,8 +827,6 @@ def parse_value(value: str) -> int | float:
         # Only use exception for actual errors
         raise ValueError(f"Cannot parse value: {value}")
 ```
-
----
 
 ## Imports
 
@@ -926,38 +883,20 @@ class UserService:
 # Relative imports - avoid these!
 from .database import DatabaseClient  # ❌
 from ..models.user import User  # ❌
-from ...utils import validate_email  # ❌
-
 
 class UserService:
     """Function-scoped imports - anti-pattern."""
     
     def create_user(self, email: str) -> dict:
         # Bad: Import inside function
-        from datetime import datetime
+        from datetime import datetime # Import at top instead!
         from myapp.services.email import EmailService
-        
-        # Bad: Import inside function for no good reason
-        import json
-        
-        # Function logic...
-        return {"email": email}
+        ...
     
     def delete_user(self, user_id: str) -> None:
         # Bad: Importing same module multiple times in different functions
         from myapp.database import DatabaseClient
-        
-        # Function logic...
-        pass
-
-
-# Bad: Imports scattered through file
-def helper_function() -> None:
-    """Helper with inline imports."""
-    from pathlib import Path  # Import at top instead!
-    import os  # Import at top instead!
-    
-    # Function logic...
+        ...
 ```
 
 ### ✅ Good: No `__init__.py` Imports (Unless Needed)
@@ -1011,6 +950,7 @@ __all__ = [
 ## Code Organization
 
 ### ✅ Good: Google-Style Docstrings
+Provide usage examples at architectural boundaries / entrypoints
 
 ```python
 def process_users(
@@ -1061,12 +1001,11 @@ def process_users(
     
     return results
 
-
 def _matches_filters(user: User, filters: dict[str, str]) -> bool:
     """Check if user matches filter criteria.
     
     Private helper function - doesn't need full docstring but has one
-    because the logic is non-trivial.
+    because the logic is non-trivial. Doesn't require usage examples.
     
     Args:
         user: User to check
@@ -1180,36 +1119,13 @@ def run(input_file: Path, output_file: Path, batch_size: int) -> int:
     Returns:
         Exit code (0 for success, 1 for failure)
     """
-    try:
-        # Load users
-        logger.info("Loading users", input_file=str(input_file))
-        users = User.load_from_csv(input_file)
-        logger.info("Loaded users", count=len(users))
-        
-        # Process
-        logger.info("Processing users", batch_size=batch_size)
-        processor = UserProcessor(batch_size=batch_size)
-        results = processor.process(users)
-        logger.info("Processed users", count=len(results))
-        
-        # Save results
-        logger.info("Saving results", output_file=str(output_file))
-        User.save_to_json(results, output_file)
-        logger.info("Processing complete")
-        
-        return 0
-        
-    except Exception as e:
-        logger.error("Processing failed", error=str(e), exc_info=True)
-        return 1
-
+    ...
 
 def main() -> None:
     """Main entry point."""
     args = parse_args()
     exit_code = run(args.input_file, args.output_file, args.batch_size)
     sys.exit(exit_code)
-
 
 if __name__ == "__main__":
     main()
@@ -1228,7 +1144,7 @@ users = []
 processed = []
 
 # Script logic at module level - runs on import!
-if len(sys.argv) < 3:
+if len(sys.argv) < 3: # prefer argparse over sys.argv
     print("Usage: python script.py input.csv output.json")
     sys.exit(1)
 
@@ -1240,17 +1156,6 @@ with open(input_file) as f:
     reader = csv.DictReader(f)
     for row in reader:
         users.append(row)
-
-# More side effects
-for user in users:
-    # Processing logic...
-    processed.append({"id": user["id"], "name": user["name"]})
-
-# More side effects
-with open(output_file, "w") as f:
-    json.dump(processed, f)
-
-print(f"Processed {len(processed)} users")
 
 # Problems:
 # 1. Can't import this module without running the script
@@ -1313,32 +1218,6 @@ def log_processing_stats(
         f"({success_rate:.2f}% success rate) in {duration_ms:.0f}ms"
     )
 
-
-def format_file_size(size_bytes: int) -> str:
-    """Format file size with appropriate unit.
-    
-    Args:
-        size_bytes: File size in bytes
-    
-    Returns:
-        Formatted size string (e.g., "1.5 MB")
-    """
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    else:
-        return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
-
-
-# F-strings support expressions
-def format_summary(items: list[dict[str, int]]) -> str:
-    """Format summary with inline calculations."""
-    return f"Total: {sum(item['value'] for item in items)}, Count: {len(items)}"
-```
-
 ### ❌ Bad: Old String Formatting Methods
 
 ```python
@@ -1352,30 +1231,11 @@ def build_query(table, conditions):
     where_clause = " AND ".join("{} = ?".format(k) for k in conditions.keys())
     return "SELECT * FROM {} WHERE {}".format(table, where_clause)
 
-
-def log_stats(processed, failed, duration_ms):
-    """Using .format() with named parameters - verbose."""
-    logger.info(
-        "Processing complete: {processed} succeeded, {failed} failed in {duration}ms".format(
-            processed=processed,
-            failed=failed,
-            duration=duration_ms
-        )
-    )
-
-
-def format_message(name, count):
-    """String concatenation - hard to read."""
-    return "Hello " + name + "! You have " + str(count) + " messages."
-
-
 def build_url(host, port, path):
-    """Mixed concatenation - error-prone."""
+    """Mixed concatenation - error-prone, hard to read."""
     return "http://" + host + ":" + str(port) + path
 ```
-
 ---
-
 ## Logging
 
 ### ✅ Good: Structured Logging with structlog
@@ -1400,10 +1260,8 @@ def configure_logging() -> None:
         cache_logger_on_first_use=True,
     )
 
-
 # Get logger for module
 logger: FilteringBoundLogger = structlog.get_logger(__name__)
-
 
 @dataclass
 class UserService:
@@ -1431,13 +1289,11 @@ class UserService:
         try:
             user = User(email=email, name=name)
             self.db.save(user)
-            
             self.logger.info(
                 "User created successfully",
                 user_id=user.id,
                 email=email
             )
-            
             return user
             
         except DatabaseError as e:
@@ -1448,7 +1304,6 @@ class UserService:
                 exc_info=True
             )
             raise
-
 
 def process_batch(items: list[dict[str, str]], batch_id: str) -> list[dict[str, str]]:
     """Process batch with structured logging.
@@ -1462,9 +1317,6 @@ def process_batch(items: list[dict[str, str]], batch_id: str) -> list[dict[str, 
     """
     # Bind context for all subsequent log calls
     log = logger.bind(batch_id=batch_id, item_count=len(items))
-    
-    log.info("Starting batch processing")
-    
     results: list[dict[str, str]] = []
     failed_count = 0
     
@@ -1518,7 +1370,7 @@ class UserService:
             return user
             
         except Exception as e:
-            # Bad: Generic exception catching and poor error logging
+            # Bad: Generic exception catching and poor error logging - include stack trace when logging errors
             logger.error(f"Error creating user: {e}")
             return None
 
@@ -1661,7 +1513,7 @@ def process_data(data):
 
 
 def calculate_discount(price, user_tier):
-    """Too many return statements - hard to follow."""
+    """Too many return statements - hard to follow, control flow is complex."""
     if user_tier == "gold":
         return price * 0.8
     
@@ -1678,45 +1530,27 @@ def calculate_discount(price, user_tier):
         return price * 0.99
     
     return price
-
-
-def validate_data(data):
-    """Many returns - control flow is complex."""
-    if not data:
-        return False
-    
-    if "id" not in data:
-        return False
-    
-    if "value" not in data:
-        return False
-    
-    if not data["id"]:
-        return False
-    
-    if len(data["value"]) < 3:
-        return False
-    
-    return True
 ```
 
 ### ✅ Good: Split Functions for Single Return Type
 
 ```python
-def parse_user_identifier(identifier: str) -> tuple[str, str]:
+UserIdType = Literal["id", "email"]
+
+def parse_user_identifier(identifier: str) -> UserIdType:
     """Parse identifier into type and value.
     
     Args:
         identifier: User identifier (ID or email)
     
     Returns:
-        Tuple of (type, value) where type is 'id' or 'email'
+        UserIdType
     """
     if identifier.isdigit():
-        return ("id", identifier)
+        user_id = "id"
     else:
-        return ("email", identifier)
-
+        user_id = "email"
+    return user_id
 
 def find_user_by_id(user_id: str) -> User | None:
     """Find user by ID.
@@ -1730,7 +1564,6 @@ def find_user_by_id(user_id: str) -> User | None:
     result = db.query("SELECT * FROM users WHERE id = ?", (user_id,))
     return User.from_dict(result) if result else None
 
-
 def find_user_by_email(email: str) -> User | None:
     """Find user by email.
     
@@ -1743,7 +1576,6 @@ def find_user_by_email(email: str) -> User | None:
     result = db.query("SELECT * FROM users WHERE email = ?", (email,))
     return User.from_dict(result) if result else None
 
-
 def find_user(identifier: str) -> User | None:
     """Find user by ID or email.
     
@@ -1755,12 +1587,12 @@ def find_user(identifier: str) -> User | None:
     Returns:
         User if found, None otherwise
     """
-    id_type, value = parse_user_identifier(identifier)
+    id_type = parse_user_identifier(identifier)
     
     if id_type == "id":
-        return find_user_by_id(value)
+        return find_user_by_id(identifier)
     else:
-        return find_user_by_email(value)
+        return find_user_by_email(identifier)
 ```
 
 ---
@@ -1768,25 +1600,17 @@ def find_user(identifier: str) -> User | None:
 ## Python Idioms
 
 ### ✅ Good: Pythonic Patterns
-
+- dict comprehensions
+- list comprehensions
+- generator expressions for memory efficiency when needed
+- context managers
+- any / all for boolean reductions
 ```python
-# List comprehensions for transformations
-def get_user_emails(users: list[User]) -> list[str]:
-    """Extract emails from users."""
-    return [user.email for user in users if user.email]
-
-
-# Dictionary comprehensions
-def index_users_by_id(users: list[User]) -> dict[str, User]:
-    """Create user lookup dictionary."""
-    return {user.id: user for user in users}
-
 
 # Generator expressions for memory efficiency
 def process_large_dataset(items: list[dict[str, str]]) -> Iterator[dict[str, str]]:
     """Process large dataset lazily."""
     return (transform(item) for item in items if is_valid(item))
-
 
 # Context managers for resource management
 def read_config_file(path: Path) -> dict[str, str]:
@@ -1794,44 +1618,20 @@ def read_config_file(path: Path) -> dict[str, str]:
     with path.open() as f:
         return json.load(f)
 
-
-# Enumerate for index+value iteration
-def find_first_match(items: list[str], pattern: str) -> int:
-    """Find index of first matching item."""
-    for idx, item in enumerate(items):
-        if pattern in item:
-            return idx
-    return -1
-
-
 # Dictionary get() with default
 def get_config_value(config: dict[str, str], key: str) -> str:
     """Get config value with default."""
     return config.get(key, "default_value")
-
-
-# Any/all for boolean checks
-def all_users_valid(users: list[User]) -> bool:
-    """Check if all users are valid."""
-    return all(user.email and user.name for user in users)
-
-
-def has_any_admin(users: list[User]) -> bool:
-    """Check if any user is admin."""
-    return any(user.is_admin for user in users)
-
 
 # Zip for parallel iteration
 def merge_data(ids: list[str], names: list[str]) -> list[dict[str, str]]:
     """Merge parallel lists into dictionaries."""
     return [{"id": id_, "name": name} for id_, name in zip(ids, names)]
 
-
 # Pathlib for file operations
 def list_python_files(directory: Path) -> list[Path]:
     """List all Python files in directory."""
     return list(directory.glob("**/*.py"))
-
 
 # Dataclass field() for mutable defaults
 from dataclasses import dataclass, field
@@ -1855,26 +1655,6 @@ def find_first_match(items, pattern):
             return i
     return -1
 
-
-# Building lists manually instead of comprehensions
-def get_user_emails(users):
-    """Building list manually - verbose."""
-    emails = []
-    for user in users:
-        if user.email:
-            emails.append(user.email)  # Use list comprehension!
-    return emails
-
-
-# Manual dictionary building
-def index_users(users):
-    """Building dict manually - unpythonic."""
-    result = {}
-    for user in users:
-        result[user.id] = user  # Use dict comprehension!
-    return result
-
-
 # Not using context managers
 def read_file(path):
     """Manual file handling - error-prone."""
@@ -1882,7 +1662,6 @@ def read_file(path):
     data = f.read()
     f.close()
     return data
-
 
 # Checking existence before accessing
 def get_value(data):
@@ -1893,7 +1672,6 @@ def get_value(data):
         return None
     # Use: data.get("key") instead!
 
-
 # Manual boolean reduction
 def all_valid(users):
     """Manual boolean check - verbose."""
@@ -1903,8 +1681,7 @@ def all_valid(users):
     return True
     # Use: all(user.is_valid for user in users)
 
-
-# Mutable default arguments - DANGEROUS!
+# Mutable default arguments - DANGEROUS, never do this!
 def add_item(item, items=[]):
     """Mutable default - BUG!"""
     items.append(item)  # items is shared across calls!
@@ -1913,7 +1690,6 @@ def add_item(item, items=[]):
 # Multiple calls share the same list:
 add_item(1)  # [1]
 add_item(2)  # [1, 2] - WAT?
-
 
 # String concatenation in loops
 def build_query(fields):
@@ -1939,7 +1715,6 @@ def parse_value(value: str) -> int | float | None:
     except ValueError:
         return None
 
-
 # Match statements for pattern matching
 def handle_response(status_code: int, body: dict[str, str]) -> str:
     """Handle HTTP response with match statement."""
@@ -1953,7 +1728,6 @@ def handle_response(status_code: int, body: dict[str, str]) -> str:
         case _:
             return f"Unexpected status: {status_code}"
 
-
 # Structural pattern matching
 def process_message(message: dict[str, str | int]) -> str:
     """Process message with structural pattern matching."""
@@ -1966,7 +1740,6 @@ def process_message(message: dict[str, str | int]) -> str:
             return f"Error: {msg}"
         case _:
             return "Unknown message type"
-
 
 # Built-in generic types (no typing imports)
 def group_by_key(
@@ -1982,9 +1755,7 @@ def group_by_key(
         groups[group_key].append(item)
     return groups
 ```
-
 ---
-
 ## Summary
 
 This reference provides comprehensive examples of Python best practices for distributed systems and data processing applications. Key principles:
