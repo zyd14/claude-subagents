@@ -78,6 +78,7 @@ Executable code (Python/Bash/etc.) for tasks that require deterministic reliabil
 - **Example**: `scripts/rotate_pdf.py` for PDF rotation tasks
 - **Benefits**: Token efficient, deterministic, may be executed without loading into context
 - **Note**: Scripts may still need to be read by Claude for patching or environment-specific adjustments
+- **Python scripts with dependencies**: See [references/uv-script-dependencies.md](references/uv-script-dependencies.md) for how to create self-contained scripts with inline dependency declarations using `uv run --script`
 
 ##### References (`references/`)
 
